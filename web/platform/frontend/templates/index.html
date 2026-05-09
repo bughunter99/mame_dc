@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MAME Web Platform MVP</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <main>
+    <h1>MAME Web Platform MVP</h1>
+    <p>Django 백엔드 + 브라우저 WASM 프런트엔드 프로토타입</p>
+    <section>
+      <button id="load-games">게임 목록 불러오기</button>
+      <button id="sync-local-roms">로컬 ROM 동기화</button>
+      <ul id="games"></ul>
+    </section>
+    <section>
+      <h2>에뮬레이터</h2>
+      <p id="emulator-status">대기 중</p>
+      <canvas id="emulator-canvas" width="960" height="720"></canvas>
+    </section>
+    <section>
+      <h2>로그</h2>
+      <pre id="log"></pre>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>
