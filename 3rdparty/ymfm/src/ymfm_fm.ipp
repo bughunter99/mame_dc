@@ -1344,8 +1344,15 @@ void fm_engine_base<RegisterType>::output(output_data &output, uint32_t rshift, 
 		assert(m_regs.noise_enable() == 0);
 
 		// precompute the operator 13+17 phase selection value
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warray-bounds"
+#endif
 		uint32_t op13phase = m_operator[13]->phase();
 		uint32_t op17phase = m_operator[17]->phase();
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 		uint32_t phase_select = (bitfield(op13phase, 2) ^ bitfield(op13phase, 7)) | bitfield(op13phase, 3) | (bitfield(op17phase, 5) ^ bitfield(op17phase, 3));
 
 		// sum over all the desired channels

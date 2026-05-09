@@ -19,6 +19,18 @@ button {
   width: fit-content;
 }
 
+.controls-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+input[type="number"] {
+  width: 7rem;
+}
+
 #log {
   background: #111;
   color: #9df;
@@ -33,4 +45,30 @@ button {
   aspect-ratio: 4 / 3;
   background: #000;
   border: 1px solid #444;
+}
+
+.error-summary {
+  margin: 0.5rem 0 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid #d33;
+  background: #2a0f0f;
+  color: #ffd2d2;
+  white-space: pre-wrap;
+}
+
+#leaderboard-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.5rem;
+}
+
+#leaderboard-table th,
+#leaderboard-table td {
+  border: 1px solid #ddd;
+  padding: 0.45rem 0.6rem;
+  text-align: left;
+}
+
+#leaderboard-table th {
+  background: #f2f2f2;
 }

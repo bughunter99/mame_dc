@@ -1,17 +1,27 @@
 import json
 from pathlib import Path
 from functools import wraps
+from urllib.parse import urlparse
+from datetime import timedelta
 
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import User
 from django.conf import settings
 from django.db import IntegrityError
-from django.http import HttpRequest, JsonResponse
+from django.core import signing
+from django.utils import timezone
+from django.http import FileResponse, HttpRequest, JsonResponse
 from django.shortcuts import render
 from django.utils.text import slugify
 from django.views.decorators.http import require_GET, require_POST
 
-from .models import Game, HighScore, SaveState
+from .models import Game, HighScore, PlaySession, SaveState
+
+
+ROM_TOKEN_SALT = "arcade.rom.download"
+ROM_TOKEN_MAX_AGE_SECONDS = 120
+SAVE_STATE_MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024
+SAVE_STATE_ALLOWED_EXTENSIONS = {".state", ".sav", ".bin", ".zip"}
 
 
 def _parse_json_body(request: HttpRequest) -> dict:
@@ -84,10 +94,112 @@ def list_games(request: HttpRequest):
             "slug": game.slug,
             "rom_download_url": game.rom_download_url,
             "wasm_bundle_url": game.wasm_bundle_url,
+            "launch_url": request.build_absolute_uri(f"/api/games/{game.id}/launch"),
         }
         for game in games
     ]
     return JsonResponse({"games": data})
+
+
+def _issue_local_rom_token(game_id: int, rom_relative_path: str) -> str:
+    payload = {
+        "game_id": game_id,
+        "rom_path": rom_relative_path,
+    }
+    return signing.dumps(payload, salt=ROM_TOKEN_SALT)
+
+
+def _is_local_rom_url(url: str) -> bool:
+    parsed = urlparse(url)
+    # Relative URLs are considered local when they use the configured ROM prefix.
+    if not parsed.scheme and not parsed.netloc:
+        return parsed.path.startswith(settings.LOCAL_ROMS_URL_PREFIX)
+
+    # Absolute URLs are considered local only for loopback hosts during local development.
+    return parsed.hostname in {"127.0.0.1", "localhost", "testserver"} and parsed.path.startswith(
+        settings.LOCAL_ROMS_URL_PREFIX
+    )
+
+
+def _extract_local_rom_relative_path(url: str) -> str:
+    marker = settings.LOCAL_ROMS_URL_PREFIX
+    index = url.find(marker)
+    if index == -1:
+        raise ValueError("not a local rom url")
+    return url[index + len(marker):].lstrip("/")
+
+
+@require_GET
+def launch_game(request: HttpRequest, game_id: int):
+    try:
+        game = Game.objects.get(id=game_id, enabled=True)
+    except Game.DoesNotExist:
+        return JsonResponse({"error": "game not found"}, status=404)
+
+    rom_download_url = game.rom_download_url
+    if _is_local_rom_url(game.rom_download_url):
+        try:
+            local_relative_path = _extract_local_rom_relative_path(game.rom_download_url)
+        except ValueError:
+            return JsonResponse({"error": "invalid local rom url"}, status=500)
+        token = _issue_local_rom_token(game.id, local_relative_path)
+        rom_download_url = request.build_absolute_uri(f"/api/roms/download/{token}")
+
+    play_session = PlaySession.objects.create(
+        user=request.user if request.user.is_authenticated else None,
+        game=game,
+    )
+
+    return JsonResponse(
+        {
+            "game": {
+                "id": game.id,
+                "title": game.title,
+                "slug": game.slug,
+            },
+            "launch": {
+                "rom_download_url": rom_download_url,
+                "wasm_bundle_url": game.wasm_bundle_url,
+                "token_ttl_seconds": ROM_TOKEN_MAX_AGE_SECONDS if _is_local_rom_url(game.rom_download_url) else None,
+                "play_session_id": str(play_session.id),
+            },
+        }
+    )
+
+
+@require_GET
+def download_local_rom_with_token(request: HttpRequest, token: str):
+    try:
+        payload = signing.loads(token, salt=ROM_TOKEN_SALT, max_age=ROM_TOKEN_MAX_AGE_SECONDS)
+    except signing.SignatureExpired:
+        return JsonResponse({"error": "rom token expired"}, status=410)
+    except signing.BadSignature:
+        return JsonResponse({"error": "invalid rom token"}, status=400)
+
+    game_id = payload.get("game_id")
+    rom_relative_path = payload.get("rom_path", "")
+    if not game_id or not rom_relative_path:
+        return JsonResponse({"error": "invalid token payload"}, status=400)
+    try:
+        game = Game.objects.get(id=game_id, enabled=True)
+    except Game.DoesNotExist:
+        return JsonResponse({"error": "game not found"}, status=404)
+
+    expected_relative_path = ""
+    if _is_local_rom_url(game.rom_download_url):
+        try:
+            expected_relative_path = _extract_local_rom_relative_path(game.rom_download_url)
+        except ValueError:
+            return JsonResponse({"error": "invalid game rom url"}, status=500)
+    if expected_relative_path != rom_relative_path:
+        return JsonResponse({"error": "token does not match game rom"}, status=400)
+
+    rom_file_path = (Path(settings.LOCAL_ROMS_DIR) / rom_relative_path).resolve()
+    local_rom_root = Path(settings.LOCAL_ROMS_DIR).resolve()
+    if not rom_file_path.is_file() or (rom_file_path.parent != local_rom_root and local_rom_root not in rom_file_path.parents):
+        return JsonResponse({"error": "rom file not found"}, status=404)
+
+    return FileResponse(rom_file_path.open("rb"), as_attachment=True, filename=rom_file_path.name)
 
 
 def _iter_local_rom_files() -> list[Path]:
@@ -160,6 +272,71 @@ def upsert_save_state(request: HttpRequest):
 
 
 @require_authenticated_user
+@require_POST
+def upload_save_state_file(request: HttpRequest):
+    game_id = request.POST.get("game_id")
+    slot_raw = request.POST.get("slot", "0")
+    upload = request.FILES.get("state_file")
+
+    if not game_id or upload is None:
+        return JsonResponse({"error": "game_id and state_file are required"}, status=400)
+
+    try:
+        slot = int(slot_raw)
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "slot must be an integer"}, status=400)
+
+    if upload.size > SAVE_STATE_MAX_FILE_SIZE_BYTES:
+        return JsonResponse({"error": "state_file is too large"}, status=413)
+
+    suffix = Path(upload.name).suffix.lower()
+    if suffix not in SAVE_STATE_ALLOWED_EXTENSIONS:
+        return JsonResponse({"error": "unsupported state_file extension"}, status=400)
+
+    try:
+        game = Game.objects.get(id=game_id, enabled=True)
+    except Game.DoesNotExist:
+        return JsonResponse({"error": "game not found"}, status=404)
+
+    safe_name = Path(upload.name).name
+    timestamp = timezone.now().strftime("%Y%m%d%H%M%S")
+    relative_path = (
+        f"savestates/user_{request.user.id}/game_{game.id}/slot_{slot}/{timestamp}_{safe_name}"
+    )
+    absolute_path = Path(settings.MEDIA_ROOT) / relative_path
+    absolute_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with absolute_path.open("wb") as output_file:
+        for chunk in upload.chunks():
+            output_file.write(chunk)
+
+    public_path = relative_path.replace("\\", "/")
+    state_blob_url = request.build_absolute_uri(f"{settings.MEDIA_URL}{public_path}")
+    state, _ = SaveState.objects.update_or_create(
+        user=request.user,
+        game=game,
+        slot=slot,
+        defaults={
+            "state_blob_url": state_blob_url,
+            "checksum": "",
+            "metadata": {
+                "source": "uploaded_file",
+                "filename": safe_name,
+                "size": upload.size,
+            },
+        },
+    )
+    return JsonResponse(
+        {
+            "id": state.id,
+            "state_blob_url": state.state_blob_url,
+            "updated_at": state.updated_at.isoformat(),
+        },
+        status=201,
+    )
+
+
+@require_authenticated_user
 @require_GET
 def list_save_states(request: HttpRequest):
     game_id = request.GET.get("game_id")
@@ -190,17 +367,50 @@ def submit_high_score(request: HttpRequest):
         return JsonResponse({"error": "invalid json body"}, status=400)
     game_id = payload.get("game_id")
     score = payload.get("score")
-    if not game_id or score is None:
-        return JsonResponse({"error": "game_id and score are required"}, status=400)
+    session_id = payload.get("session_id")
+    duration_ms = payload.get("duration_ms")
+    if not game_id or score is None or not session_id or duration_ms is None:
+        return JsonResponse({"error": "game_id, score, session_id and duration_ms are required"}, status=400)
+
+    try:
+        score_int = int(score)
+        duration_ms_int = int(duration_ms)
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "score and duration_ms must be integers"}, status=400)
+
+    if duration_ms_int < 0:
+        return JsonResponse({"error": "duration_ms must be non-negative"}, status=400)
     try:
         game = Game.objects.get(id=game_id, enabled=True)
     except Game.DoesNotExist:
         return JsonResponse({"error": "game not found"}, status=404)
+
+    try:
+        play_session = PlaySession.objects.get(id=session_id, game=game)
+    except PlaySession.DoesNotExist:
+        return JsonResponse({"error": "play session not found"}, status=404)
+
+    if request.user.is_authenticated and play_session.user_id != request.user.id:
+        return JsonResponse({"error": "play session does not belong to current user"}, status=403)
+
+    session_elapsed_ms = int((timezone.now() - play_session.started_at).total_seconds() * 1000)
+    # Allow small client/server drift and delayed score submit.
+    if duration_ms_int > session_elapsed_ms + 5000:
+        return JsonResponse({"error": "duration_ms exceeds server-observed play time"}, status=400)
+
+    if play_session.ended_at is None:
+        play_session.ended_at = play_session.started_at + timedelta(milliseconds=duration_ms_int)
+        play_session.save(update_fields=["ended_at"])
+
     high_score = HighScore.objects.create(
         user=request.user if request.user.is_authenticated else None,
         game=game,
-        score=int(score),
-        metadata=payload.get("metadata", {}),
+        score=score_int,
+        metadata={
+            **payload.get("metadata", {}),
+            "session_id": str(play_session.id),
+            "duration_ms": duration_ms_int,
+        },
     )
     return JsonResponse({"id": high_score.id, "submitted_at": high_score.submitted_at.isoformat()}, status=201)
 

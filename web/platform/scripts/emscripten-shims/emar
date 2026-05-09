@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Calculate total command line length to detect Windows limit overflow
+total=0
+for arg in "$@"; do
+    total=$((total + ${#arg} + 1))
+done
+
+if [ $total -gt 7000 ]; then
+    # Too long for Windows cmd.exe - use llvm-ar directly with a response file
+    LLVM_AR=/d/data3/emsdk/upstream/bin/llvm-ar.exe
+    op="$1"
+    archive="$2"
+    shift 2
+    tmpfile=$(mktemp /tmp/emar_rsp_XXXXXX.txt)
+    for f in "$@"; do
+        printf '%s\n' "$f" >> "$tmpfile"
+    done
+    "$LLVM_AR" "$op" "$archive" "@$tmpfile"
+    exit_code=$?
+    rm -f "$tmpfile"
+    exit $exit_code
+else
+    exec /d/data3/emsdk/upstream/emscripten/emar.bat "$@"
+fi

@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+exec /d/data3/emsdk/upstream/emscripten/emcc.bat "$@"

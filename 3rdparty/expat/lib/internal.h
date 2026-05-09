@@ -113,7 +113,10 @@
     && (! defined(__USE_MINGW_ANSI_STDIO)                                      \
         || (1 - __USE_MINGW_ANSI_STDIO - 1 == 0))
 #  define EXPAT_FMT_ULL(midpart) "%" midpart "I64u"
-#  if defined(_WIN64) // Note: modifiers "td" and "zu" do not work for MinGW
+#  if defined(__EMSCRIPTEN__)
+#    define EXPAT_FMT_PTRDIFF_T(midpart) "%" midpart "td"
+#    define EXPAT_FMT_SIZE_T(midpart) "%" midpart "zu"
+#  elif defined(_WIN64) // Note: modifiers "td" and "zu" do not work for MinGW
 #    define EXPAT_FMT_PTRDIFF_T(midpart) "%" midpart "I64d"
 #    define EXPAT_FMT_SIZE_T(midpart) "%" midpart "I64u"
 #  else
@@ -127,7 +130,7 @@
 #  elif ULONG_MAX == 18446744073709551615u // 2^64-1
 #    define EXPAT_FMT_PTRDIFF_T(midpart) "%" midpart "ld"
 #    define EXPAT_FMT_SIZE_T(midpart) "%" midpart "lu"
-#  elif defined(EMSCRIPTEN) // 32bit mode Emscripten
+#  elif defined(__EMSCRIPTEN__) // 32bit mode Emscripten
 #    define EXPAT_FMT_PTRDIFF_T(midpart) "%" midpart "ld"
 #    define EXPAT_FMT_SIZE_T(midpart) "%" midpart "zu"
 #  else

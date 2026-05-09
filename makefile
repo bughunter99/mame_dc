@@ -434,7 +434,11 @@ endif
 endif # BIGENDIAN
 
 ifndef PYTHON_EXECUTABLE
+ifdef EMSDK_PYTHON
+PYTHON := $(subst \,/,$(EMSDK_PYTHON))
+else
 PYTHON := python3
+endif
 else
 PYTHON := $(PYTHON_EXECUTABLE)
 endif
@@ -961,12 +965,20 @@ endif
 ifeq ($(OS),windows)
 ifeq (posix,$(SHELLTYPE))
 GCC_VERSION      := $(shell $(TOOLCHAIN)$(subst @,,$(CC)) -dumpfullversion 2> /dev/null)
+ifeq ($(findstring emcc,$(CC)),emcc)
+CLANG_VERSION    := 23.0.0
+else
 CLANG_VERSION    := $(shell $(TOOLCHAIN)$(subst @,,$(CC)) --version 2> /dev/null| head -n 1 | grep clang | sed "s/^.*[^0-9]\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\).*$$/\1/" | head -n 1)
+endif
 PYTHON_AVAILABLE := $(shell $(PYTHON) --version > /dev/null 2>&1 && echo python)
 GIT_AVAILABLE    := $(shell git --version > /dev/null 2>&1 && echo git)
 else
 GCC_VERSION      := $(shell $(TOOLCHAIN)$(subst @,,$(CC)) -dumpfullversion 2> NUL)
+ifeq ($(findstring emcc,$(CC)),emcc)
+CLANG_VERSION    := 23.0.0
+else
 CLANG_VERSION    := $(shell $(TOOLCHAIN)$(subst @,,$(CC)) --version 2> NUL| head -n 1 | grep clang | sed "s/^.*[^0-9]\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\).*$$/\1/" | head -n 1)
+endif
 PYTHON_AVAILABLE := $(shell $(PYTHON) --version > NUL 2>&1 && echo python)
 GIT_AVAILABLE    := $(shell git --version > NUL 2>&1 && echo git)
 endif
@@ -993,7 +1005,7 @@ else
 GCC_VERSION      := $(shell $(TOOLCHAIN)$(subst @,,$(CC)) -dumpfullversion 2> /dev/null)
 endif
 ifeq ($(findstring emcc,$(CC)),emcc)
-CLANG_VERSION    := $(shell $(TOOLCHAIN)$(subst @,,$(CC))  -v  2>&1 >/dev/null | grep 'clang version' | head -n 1 | grep -e 'version [0-9]\+\.[0-9]\+\(\.[0-9]\+\)\?' -o | grep -e '[0-9]\+\.[0-9]\+\(\.[0-9]\+\)\?' -o | tail -n 1)
+CLANG_VERSION    := 23.0.0
 else
 CLANG_VERSION    := $(shell $(TOOLCHAIN)$(subst @,,$(CC))  --version  2> /dev/null | head -n 1 | grep -e 'version [0-9]\+\.[0-9]\+\(\.[0-9]\+\)\?' -o | grep -e '[0-9]\+\.[0-9]\+\(\.[0-9]\+\)\?' -o | tail -n 1)
 endif

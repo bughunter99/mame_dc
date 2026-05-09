@@ -370,10 +370,7 @@
 #elif BX_PLATFORM_BSD
 #	define BX_PLATFORM_NAME "BSD"
 #elif BX_PLATFORM_EMSCRIPTEN
-#	define BX_PLATFORM_NAME "asm.js "          \
-		BX_STRINGIZE(__EMSCRIPTEN_major__) "." \
-		BX_STRINGIZE(__EMSCRIPTEN_minor__) "." \
-		BX_STRINGIZE(__EMSCRIPTEN_tiny__)
+#	define BX_PLATFORM_NAME "asm.js"
 #elif BX_PLATFORM_HAIKU
 #	define BX_PLATFORM_NAME "Haiku"
 #elif BX_PLATFORM_HURD

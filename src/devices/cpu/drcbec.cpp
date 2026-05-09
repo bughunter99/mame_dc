@@ -18,7 +18,7 @@
 #include <cfenv>
 #include <cmath>
 
-#if defined(__clang_major__) && (__clang_major__ < 12)
+#if (defined(__clang_major__) && (__clang_major__ < 12)) || defined(__EMSCRIPTEN__)
 // can't guarantee floating point environment control works
 #else
 #pragma STDC FENV_ACCESS ON

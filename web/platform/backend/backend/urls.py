@@ -27,4 +27,5 @@ urlpatterns = [
 if settings.DEBUG:
     urlpatterns += [
         path("roms/<path:path>", serve, {"document_root": settings.LOCAL_ROMS_DIR}),
+        path("media/<path:path>", serve, {"document_root": settings.MEDIA_ROOT}),
     ]

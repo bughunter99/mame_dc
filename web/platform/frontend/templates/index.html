@@ -18,7 +18,48 @@
     <section>
       <h2>에뮬레이터</h2>
       <p id="emulator-status">대기 중</p>
+      <p id="error-summary" class="error-summary" hidden></p>
       <canvas id="emulator-canvas" width="960" height="720"></canvas>
+    </section>
+    <section>
+      <h2>플레이 데이터</h2>
+      <p>현재 게임 ID: <span id="current-game-id">-</span></p>
+      <p>현재 세션 ID: <span id="current-session-id">-</span></p>
+      <div class="controls-row">
+        <label for="score-input">점수</label>
+        <input id="score-input" type="number" min="0" value="1000">
+        <button id="submit-score">점수 저장</button>
+      </div>
+      <div class="controls-row">
+        <label for="save-file-input">세이브 파일</label>
+        <input id="save-file-input" type="file" accept=".state,.sav,.bin,.zip">
+        <label for="save-slot-input">슬롯</label>
+        <input id="save-slot-input" type="number" min="0" max="9" value="0">
+        <button id="upload-save">세이브 업로드</button>
+      </div>
+    </section>
+    <section>
+      <h2>리더보드</h2>
+      <div class="controls-row">
+        <label for="leaderboard-game">게임</label>
+        <select id="leaderboard-game"></select>
+        <button id="refresh-leaderboard">새로고침</button>
+      </div>
+      <table id="leaderboard-table">
+        <thead>
+          <tr>
+            <th>순위</th>
+            <th>유저</th>
+            <th>점수</th>
+            <th>시간</th>
+          </tr>
+        </thead>
+        <tbody id="leaderboard-body">
+          <tr>
+            <td colspan="4">리더보드를 불러오세요.</td>
+          </tr>
+        </tbody>
+      </table>
     </section>
     <section>
       <h2>로그</h2>
