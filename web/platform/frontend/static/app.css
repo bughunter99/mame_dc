@@ -9,10 +9,14 @@ main {
 
 #games li {
   margin: 0.5rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
 }
 
 button {
   margin-top: 0.25rem;
+  width: fit-content;
 }
 
 #log {
@@ -21,4 +25,12 @@ button {
   padding: 1rem;
   min-height: 180px;
   overflow: auto;
+}
+
+#emulator-canvas {
+  width: 100%;
+  max-width: 960px;
+  aspect-ratio: 4 / 3;
+  background: #000;
+  border: 1px solid #444;
 }
