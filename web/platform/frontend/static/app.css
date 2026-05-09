@@ -1,0 +1,24 @@
+body {
+  font-family: Arial, sans-serif;
+  margin: 2rem;
+}
+
+main {
+  max-width: 900px;
+}
+
+#games li {
+  margin: 0.5rem 0;
+}
+
+button {
+  margin-top: 0.25rem;
+}
+
+#log {
+  background: #111;
+  color: #9df;
+  padding: 1rem;
+  min-height: 180px;
+  overflow: auto;
+}

@@ -1,0 +1,28 @@
+[
+  {
+    "model": "arcade.game",
+    "pk": 1,
+    "fields": {
+      "title": "Pac-Man (Sample)",
+      "slug": "pacman-sample",
+      "rom_download_url": "https://example.invalid/roms/pacman/manifest.json",
+      "wasm_bundle_url": "https://example.invalid/wasm/mame/pacman.mjs",
+      "enabled": true,
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "arcade.game",
+    "pk": 2,
+    "fields": {
+      "title": "Galaga (Sample)",
+      "slug": "galaga-sample",
+      "rom_download_url": "https://example.invalid/roms/galaga/manifest.json",
+      "wasm_bundle_url": "https://example.invalid/wasm/mame/galaga.mjs",
+      "enabled": true,
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    }
+  }
+]
