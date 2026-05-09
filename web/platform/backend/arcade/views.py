@@ -38,8 +38,8 @@ def index(request: HttpRequest):
 def register_user(request: HttpRequest):
     try:
         payload = _parse_json_body(request)
-    except ValueError as exc:
-        return JsonResponse({"error": str(exc)}, status=400)
+    except ValueError:
+        return JsonResponse({"error": "invalid json body"}, status=400)
     username = payload.get("username", "").strip()
     password = payload.get("password", "")
     if not username or not password:
@@ -56,8 +56,8 @@ def register_user(request: HttpRequest):
 def login_user(request: HttpRequest):
     try:
         payload = _parse_json_body(request)
-    except ValueError as exc:
-        return JsonResponse({"error": str(exc)}, status=400)
+    except ValueError:
+        return JsonResponse({"error": "invalid json body"}, status=400)
     user = authenticate(request, username=payload.get("username"), password=payload.get("password"))
     if user is None:
         return JsonResponse({"error": "invalid credentials"}, status=401)
@@ -92,8 +92,8 @@ def list_games(request: HttpRequest):
 def upsert_save_state(request: HttpRequest):
     try:
         payload = _parse_json_body(request)
-    except ValueError as exc:
-        return JsonResponse({"error": str(exc)}, status=400)
+    except ValueError:
+        return JsonResponse({"error": "invalid json body"}, status=400)
     game_id = payload.get("game_id")
     try:
         slot = int(payload.get("slot", 0))
@@ -146,8 +146,8 @@ def list_save_states(request: HttpRequest):
 def submit_high_score(request: HttpRequest):
     try:
         payload = _parse_json_body(request)
-    except ValueError as exc:
-        return JsonResponse({"error": str(exc)}, status=400)
+    except ValueError:
+        return JsonResponse({"error": "invalid json body"}, status=400)
     game_id = payload.get("game_id")
     score = payload.get("score")
     if not game_id or score is None:
