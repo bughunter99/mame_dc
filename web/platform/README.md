@@ -27,6 +27,17 @@ python3 manage.py runserver
 
 브라우저에서 `http://127.0.0.1:8000/` 접속.
 
+## 로컬 ROM으로 확인하기 (개발용)
+
+1. `web/platform/roms/` 폴더를 만들고 ROM 파일(`.zip`, `.7z`, `.chd`, `.rom`)을 넣습니다.
+2. 서버 실행 후 메인 페이지에서 **로컬 ROM 동기화** 버튼을 누릅니다.
+3. 목록에 나타난 게임에서 **실행 준비 확인** 버튼을 누르면:
+   - ROM 파일 접근 가능 여부
+   - WASM 번들(`/static/wasm/mame.js`) 존재 여부
+   를 로그에서 확인할 수 있습니다.
+
+> 참고: 현재 단계는 실행 준비 확인까지이며, 실제 플레이를 위해서는 Emscripten으로 빌드한 코어(`mame.js`, `.wasm`)를 `frontend/static/wasm/`에 배치하고 런타임 연결 작업이 추가로 필요합니다.
+
 ## API 개요
 
 - `POST /api/auth/register`

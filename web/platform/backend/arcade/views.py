@@ -1,11 +1,14 @@
 import json
+from pathlib import Path
 from functools import wraps
 
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import User
+from django.conf import settings
 from django.db import IntegrityError
 from django.http import HttpRequest, JsonResponse
 from django.shortcuts import render
+from django.utils.text import slugify
 from django.views.decorators.http import require_GET, require_POST
 
 from .models import Game, HighScore, SaveState
@@ -85,6 +88,43 @@ def list_games(request: HttpRequest):
         for game in games
     ]
     return JsonResponse({"games": data})
+
+
+def _iter_local_rom_files() -> list[Path]:
+    roms_dir = Path(settings.LOCAL_ROMS_DIR)
+    if not roms_dir.exists():
+        return []
+    allowed_extensions = {".zip", ".7z", ".chd", ".rom"}
+    return [
+        file_path for file_path in sorted(roms_dir.iterdir())
+        if file_path.is_file() and file_path.suffix.lower() in allowed_extensions
+    ]
+
+
+@require_POST
+def sync_local_roms(request: HttpRequest):
+    rom_files = _iter_local_rom_files()
+    created = 0
+    updated = 0
+    for rom_file in rom_files:
+        slug_base = slugify(rom_file.stem) or "local-rom"
+        slug = f"local-{slug_base}"[:50]
+        title = rom_file.stem.replace("_", " ").strip() or rom_file.name
+        rom_download_url = request.build_absolute_uri(f"{settings.LOCAL_ROMS_URL_PREFIX}{rom_file.name}")
+        wasm_bundle_url = request.build_absolute_uri(settings.LOCAL_WASM_BUNDLE_PATH)
+
+        game, was_created = Game.objects.update_or_create(
+            slug=slug,
+            defaults={
+                "title": title,
+                "rom_download_url": rom_download_url,
+                "wasm_bundle_url": wasm_bundle_url,
+                "enabled": True,
+            },
+        )
+        created += int(was_created)
+        updated += int(not was_created and game.enabled)
+    return JsonResponse({"created": created, "updated": updated, "total_local_roms": len(rom_files)})
 
 
 @require_authenticated_user

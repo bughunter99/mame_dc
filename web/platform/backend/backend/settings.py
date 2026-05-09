@@ -118,6 +118,9 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATICFILES_DIRS = [BASE_DIR.parent / "frontend" / "static"]
+LOCAL_ROMS_DIR = BASE_DIR.parent / "roms"
+LOCAL_ROMS_URL_PREFIX = "/roms/"
+LOCAL_WASM_BUNDLE_PATH = "/static/wasm/mame.js"
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
