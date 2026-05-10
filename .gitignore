@@ -49,3 +49,7 @@ regtests/chdman/temp
 regtests/jedutil/output
 /CMakeLists.txt
 /samples
+
+# Local ROM archives
+/roms/**/*.zip
+/web/platform/roms/**/*.zip

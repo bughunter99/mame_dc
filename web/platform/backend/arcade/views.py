@@ -3,6 +3,7 @@ from pathlib import Path
 from functools import wraps
 from urllib.parse import urlparse
 from datetime import timedelta
+import zipfile
 
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import User
@@ -10,10 +11,10 @@ from django.conf import settings
 from django.db import IntegrityError
 from django.core import signing
 from django.utils import timezone
-from django.http import FileResponse, HttpRequest, JsonResponse
+from django.http import FileResponse, HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.utils.text import slugify
-from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
 from .models import Game, HighScore, PlaySession, SaveState
 
@@ -129,6 +130,27 @@ def _extract_local_rom_relative_path(url: str) -> str:
     return url[index + len(marker):].lstrip("/")
 
 
+def _infer_machine_name_from_local_rom(rom_relative_path: str) -> str:
+    """Infer machine name from local ROM archive contents when filename is ambiguous."""
+    default_machine = Path(rom_relative_path).stem
+    rom_file_path = (Path(settings.LOCAL_ROMS_DIR) / rom_relative_path).resolve()
+    if rom_file_path.suffix.lower() != ".zip" or not rom_file_path.is_file():
+        return default_machine
+
+    try:
+        with zipfile.ZipFile(rom_file_path, "r") as zip_file:
+            names = {Path(name).name.lower() for name in zip_file.namelist()}
+    except (OSError, zipfile.BadZipFile):
+        return default_machine
+
+    # Some sf2ce.zip variants actually map to the sf2rb bootleg set in this tree.
+    sf2rb_markers = {"sf2ce.23", "sf2ce.22", "s92_21a.bin"}
+    if sf2rb_markers.issubset(names):
+        return "sf2rb"
+
+    return default_machine
+
+
 @require_GET
 def launch_game(request: HttpRequest, game_id: int):
     try:
@@ -137,18 +159,32 @@ def launch_game(request: HttpRequest, game_id: int):
         return JsonResponse({"error": "game not found"}, status=404)
 
     rom_download_url = game.rom_download_url
+    machine_name = ""
     if _is_local_rom_url(game.rom_download_url):
         try:
             local_relative_path = _extract_local_rom_relative_path(game.rom_download_url)
         except ValueError:
             return JsonResponse({"error": "invalid local rom url"}, status=500)
+        machine_name = _infer_machine_name_from_local_rom(local_relative_path)
         token = _issue_local_rom_token(game.id, local_relative_path)
         rom_download_url = request.build_absolute_uri(f"/api/roms/download/{token}")
+    else:
+        machine_name = Path(urlparse(game.rom_download_url).path).stem
 
     play_session = PlaySession.objects.create(
         user=request.user if request.user.is_authenticated else None,
         game=game,
     )
+
+    # Determine the actual ROM filename so the frontend can write it correctly
+    # regardless of whether the download URL is a token URL or a direct URL.
+    if _is_local_rom_url(game.rom_download_url):
+        try:
+            rom_filename = Path(_extract_local_rom_relative_path(game.rom_download_url)).name
+        except ValueError:
+            rom_filename = ""
+    else:
+        rom_filename = game.rom_download_url.rstrip("/").split("/")[-1]
 
     return JsonResponse(
         {
@@ -159,6 +195,8 @@ def launch_game(request: HttpRequest, game_id: int):
             },
             "launch": {
                 "rom_download_url": rom_download_url,
+                "rom_filename": rom_filename,
+                "machine_name": machine_name,
                 "wasm_bundle_url": game.wasm_bundle_url,
                 "token_ttl_seconds": ROM_TOKEN_MAX_AGE_SECONDS if _is_local_rom_url(game.rom_download_url) else None,
                 "play_session_id": str(play_session.id),
@@ -167,7 +205,7 @@ def launch_game(request: HttpRequest, game_id: int):
     )
 
 
-@require_GET
+@require_http_methods(["GET", "HEAD"])
 def download_local_rom_with_token(request: HttpRequest, token: str):
     try:
         payload = signing.loads(token, salt=ROM_TOKEN_SALT, max_age=ROM_TOKEN_MAX_AGE_SECONDS)
@@ -198,6 +236,10 @@ def download_local_rom_with_token(request: HttpRequest, token: str):
     local_rom_root = Path(settings.LOCAL_ROMS_DIR).resolve()
     if not rom_file_path.is_file() or (rom_file_path.parent != local_rom_root and local_rom_root not in rom_file_path.parents):
         return JsonResponse({"error": "rom file not found"}, status=404)
+
+    if request.method == "HEAD":
+        # Frontend readiness checks only need existence validation.
+        return HttpResponse(status=200)
 
     return FileResponse(rom_file_path.open("rb"), as_attachment=True, filename=rom_file_path.name)
 

@@ -24,8 +24,8 @@ const emulatorState = {
 function log(message) {
   logEl.textContent += `${message}\n`;
   const lines = logEl.textContent.trimEnd().split("\n");
-  if (lines.length > 80) {
-    logEl.textContent = `${lines.slice(-80).join("\n")}\n`;
+  if (lines.length > 300) {
+    logEl.textContent = `${lines.slice(-300).join("\n")}\n`;
   }
   logEl.scrollTop = logEl.scrollHeight;
 }
@@ -254,18 +254,19 @@ async function loadRomBytes(romUrl) {
   return new Uint8Array(await response.arrayBuffer());
 }
 
-function configureModule(game, wasmBundleUrl, romFilename, romBytes) {
-  const machineName = machineNameFromRomFilename(romFilename);
+function configureModule(game, wasmBundleUrl, machineName, romFilename, romBytes) {
+  log(`[${game.slug}] machine="${machineName}" rom="${romFilename}" size=${romBytes.length}`);
+  const mameArgs = [machineName, "-rompath", "/roms", "-skip_gameinfo", "-verbose", "-sound", "none"];
+  log(`[${game.slug}] MAME args: ${mameArgs.join(" ")}`);
   window.Module = {
     canvas: emulatorCanvasEl,
-    arguments: [machineName, "-rompath", "/roms", "-skip_gameinfo"],
+    arguments: mameArgs,
     print: (text) => log(`[mame] ${text}`),
     printErr: (text) => log(`[mame:err] ${text}`),
     locateFile: (path) => {
-      if (path.endsWith(".wasm")) {
-        return new URL(path, wasmBundleUrl).toString();
-      }
-      return path;
+      const resolved = path.endsWith(".wasm") ? new URL(path, wasmBundleUrl).toString() : path;
+      log(`[mame:locate] ${path} → ${resolved}`);
+      return resolved;
     },
     preRun: [
       () => {
@@ -280,18 +281,34 @@ function configureModule(game, wasmBundleUrl, romFilename, romBytes) {
           }
         }
         window.FS.writeFile(`/roms/${romFilename}`, romBytes);
+        log(`[${game.slug}] FS에 /roms/${romFilename} 마운트 완료 (${romBytes.length} bytes)`);
+        // 디버그: FS에 실제로 파일이 쓰였는지 확인
+        try {
+          const stat = window.FS.stat(`/roms/${romFilename}`);
+          log(`[${game.slug}] FS stat: size=${stat.size}`);
+        } catch (e) {
+          log(`[${game.slug}] FS stat 실패: ${e}`);
+        }
       },
     ],
     onRuntimeInitialized: () => {
       emulatorState.started = true;
       emulatorState.booting = false;
       setEmulatorStatus(`실행 중: ${game.title}`);
-      log(`[${game.slug}] 코어 초기화 완료`);
+      log(`[${game.slug}] 코어 초기화 완료 — MAME main() 진입`);
+    },
+    onExit: (code) => {
+      log(`[${game.slug}] MAME 종료 코드: ${code}`);
     },
     onAbort: (reason) => {
       emulatorState.booting = false;
       setEmulatorStatus("실행 중단됨");
-      log(`[${game.slug}] 코어 중단: ${reason}`);
+      log(`[${game.slug}] 코어 중단 reason="${reason}" (type=${typeof reason})`);
+      // 스택 트레이스 시도
+      try {
+        const err = new Error("abort trace");
+        log(`[${game.slug}] abort stack: ${err.stack}`);
+      } catch (_) {}
     },
   };
 }
@@ -341,12 +358,13 @@ async function launchGame(game) {
     if (!romReady || !wasmReady) {
       throw new Error("ROM 또는 WASM 번들이 준비되지 않았습니다.");
     }
-    const romFilename = extractFilename(launch.rom_download_url);
+    const romFilename = launch.rom_filename || extractFilename(launch.rom_download_url);
+    const machineName = launch.machine_name || machineNameFromRomFilename(romFilename);
     if (!romFilename) {
       throw new Error("ROM 파일명을 확인할 수 없습니다.");
     }
     const romBytes = await loadRomBytes(launch.rom_download_url);
-    configureModule(game, launch.wasm_bundle_url, romFilename, romBytes);
+    configureModule(game, launch.wasm_bundle_url, machineName, romFilename, romBytes);
     await loadCoreScript(launch.wasm_bundle_url);
     log(`[${game.slug}] 코어 로딩 시작`);
   } catch (error) {

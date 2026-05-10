@@ -6,8 +6,8 @@ import uuid
 class Game(models.Model):
     title = models.CharField(max_length=120)
     slug = models.SlugField(unique=True)
-    rom_download_url = models.URLField()
-    wasm_bundle_url = models.URLField()
+    rom_download_url = models.CharField(max_length=500)
+    wasm_bundle_url = models.CharField(max_length=500)
     enabled = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
