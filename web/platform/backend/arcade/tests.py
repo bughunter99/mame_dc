@@ -1,5 +1,6 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
+import zipfile
 
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -75,6 +76,60 @@ class RomTokenDownloadTests(TestCase):
 				self.assertEqual(download_response.status_code, 200)
 				self.assertEqual(b"".join(download_response.streaming_content), rom_bytes)
 				download_response.close()
+
+	@override_settings(LOCAL_ROMS_URL_PREFIX="/roms/")
+	def test_launch_infers_sf2rb_from_bootleg_markers(self):
+		with TemporaryDirectory() as temp_dir:
+			rom_dir = Path(temp_dir)
+			rom_file = rom_dir / "sf2ce.zip"
+			with zipfile.ZipFile(rom_file, "w") as archive:
+				archive.writestr("sf2ce.23", b"a")
+				archive.writestr("sf2ce.22", b"b")
+				archive.writestr("s92_21a.bin", b"c")
+
+			with override_settings(LOCAL_ROMS_DIR=rom_dir):
+				game = Game.objects.create(
+					title="SF2 Local",
+					slug="sf2-local-token",
+					rom_download_url="http://testserver/roms/sf2ce.zip",
+					wasm_bundle_url="http://testserver/static/wasm/mame.js",
+					enabled=True,
+				)
+
+				launch_response = self.client.get(f"/api/games/{game.id}/launch")
+				self.assertEqual(launch_response.status_code, 200)
+				launch_payload = launch_response.json()
+				self.assertEqual(launch_payload["launch"]["machine_name"], "sf2rb")
+
+
+class RomDiagnosisApiTests(TestCase):
+	@override_settings(LOCAL_ROMS_URL_PREFIX="/roms/")
+	def test_rom_diagnose_reports_likely_machine_and_missing_markers(self):
+		with TemporaryDirectory() as temp_dir:
+			rom_dir = Path(temp_dir)
+			rom_file = rom_dir / "sf2ce.zip"
+			with zipfile.ZipFile(rom_file, "w") as archive:
+				archive.writestr("sf2ce.23", b"a")
+				archive.writestr("sf2ce.22", b"b")
+				archive.writestr("s92_21a.bin", b"c")
+
+			with override_settings(LOCAL_ROMS_DIR=rom_dir):
+				game = Game.objects.create(
+					title="SF2 Local",
+					slug="sf2-local-diagnose",
+					rom_download_url="http://testserver/roms/sf2ce.zip",
+					wasm_bundle_url="http://testserver/static/wasm/mame.js",
+					enabled=True,
+				)
+
+				response = self.client.get(f"/api/games/{game.id}/rom-diagnose")
+				self.assertEqual(response.status_code, 200)
+				payload = response.json()
+				self.assertTrue(payload["local_rom"])
+				self.assertEqual(payload["inferred_machine"], "sf2rb")
+				self.assertEqual(payload["likely_machine"], "sf2rb")
+				self.assertGreaterEqual(payload["entry_count"], 3)
+				self.assertIn("s92-13m.6c", payload["missing_markers"]["sf2rb"])
 
 
 class ScoreValidationTests(TestCase):
@@ -160,3 +215,29 @@ class SaveStateUploadTests(TestCase):
 				payload = response.json()
 				self.assertIn("/media/savestates/", payload["state_blob_url"])
 				self.assertEqual(SaveState.objects.count(), 1)
+
+
+class LocalRomSyncTests(TestCase):
+	@override_settings(LOCAL_ROMS_URL_PREFIX="/roms/")
+	def test_sync_disables_local_games_without_matching_rom_file(self):
+		with TemporaryDirectory() as temp_dir:
+			rom_dir = Path(temp_dir)
+			(rom_dir / "sf2ce.zip").write_bytes(b"zip-bytes")
+
+			stale_game = Game.objects.create(
+				title="sf2rb",
+				slug="local-sf2rb",
+				rom_download_url="http://testserver/roms/sf2rb.zip",
+				wasm_bundle_url="http://testserver/static/wasm/mame.js",
+				enabled=True,
+			)
+
+			with override_settings(LOCAL_ROMS_DIR=rom_dir):
+				response = self.client.post("/api/games/sync-local-roms")
+
+			self.assertEqual(response.status_code, 200)
+			payload = response.json()
+			self.assertEqual(payload["disabled"], 1)
+
+			stale_game.refresh_from_db()
+			self.assertFalse(stale_game.enabled)

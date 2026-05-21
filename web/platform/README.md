@@ -55,6 +55,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 3. 목록에 나타난 게임에서 **실행 준비 확인** 버튼을 누르면:
     - ROM 파일 접근 가능 여부
     - WASM 번들(`/static/wasm/mame.js`) 존재 여부
+  - 로컬 zip ROM인 경우 marker 기반 머신 추정/누락 marker 목록
     를 로그에서 확인할 수 있습니다.
 4. **실행** 버튼을 누르면:
    - ROM 파일을 브라우저 메모리 FS(`/roms`)로 로드
@@ -67,6 +68,55 @@ Set-ExecutionPolicy -Scope Process Bypass
 
 > 참고: MVP 실행 흐름은 연결되었지만, 코어/ROM 조합별 옵션 튜닝(머신명, BIOS, 추가 아규먼트 등)은 개별 게임에 맞춰 추가 조정이 필요합니다.
 
+## 모바일(스마트폰) 실행 팁
+
+- 에뮬레이터 영역에 `전체화면` 버튼을 추가했습니다.
+- 화면 하단에 터치 컨트롤(방향키/버튼/코인/스타트)이 표시됩니다.
+  - 방향키: `Arrow` 계열
+  - 기본 액션: `ControlLeft`, `AltLeft`, `Space`
+  - `sf2ce`는 자동으로 6버튼 프리셋(LP/MP/HP/LK/MK/HK)으로 전환됩니다.
+    - LP/MP/HP: `ControlLeft` / `AltLeft` / `Space`
+    - LK/MK/HK: `ShiftLeft` / `KeyZ` / `KeyX`
+  - 시스템: `Digit5`(코인), `Digit1`(스타트)
+- 모바일 브라우저는 가로 모드가 더 안정적입니다.
+- 터치 입력은 키보드 이벤트로 변환되어 기존 MAME 키 입력 경로를 그대로 사용합니다.
+
+## sf2ce ROM 빠른 점검 스크립트
+
+`sf2ce.zip`이 웹/모바일 테스트 가능한 상태인지 빠르게 확인하려면 다음 스크립트를 사용합니다.
+
+```powershell
+cd D:\data3\mame_dc
+.\web\platform\scripts\check-rom-feasibility.ps1 -RomZipPath "web/platform/roms/sf2ce.zip" -Machine sf2ce
+```
+
+머신을 자동으로 선택하고 JSON 리포트를 남기려면:
+
+```powershell
+.\web\platform\scripts\check-rom-feasibility.ps1 \
+  -RomZipPath "web/platform/roms/sf2ce.zip" \
+  -AutoSelectMachine \
+  -JsonOutputPath "web/platform/rom-report.json"
+```
+
+런타임 로그 파일이 있으면 함께 분석할 수 있습니다.
+
+```powershell
+.\web\platform\scripts\check-rom-feasibility.ps1 \
+  -RomZipPath "web/platform/roms/sf2ce.zip" \
+  -Machine sf2ce \
+  -RuntimeLogPath "web/platform/frontend/static/wasm/runtime.log"
+```
+
+출력 항목:
+- target 머신 기준 marker 파일 누락 여부
+- 현재 zip이 sf2ce/sf2rb 중 어느 쪽에 더 가까운지 추정
+- 로그에서 missing/bad 단서가 발견되면 파일명 목록 출력
+
+주의:
+- 게임별 기본 키맵이 다를 수 있어 버튼 매핑은 추후 게임별 프리셋으로 분리하는 것을 권장합니다.
+- 실제 기동 성공 여부는 ROM 세트 CRC 정합성에 영향을 받습니다.
+
 ## API 개요
 
 - `POST /api/auth/register`
@@ -75,6 +125,8 @@ Set-ExecutionPolicy -Scope Process Bypass
 - `GET /api/games`
 - `GET /api/games/<id>/launch`
   - 응답 `launch.play_session_id`를 점수 제출 시 사용
+- `GET /api/games/<id>/rom-diagnose`
+  - 로컬 zip ROM 대상 marker 진단 결과(inferred_machine, likely_machine, missing_markers) 반환
 - `GET /api/roms/download/<token>`
 - `GET /api/saves` (로그인 필요)
 - `POST /api/saves/upsert` (로그인 필요)

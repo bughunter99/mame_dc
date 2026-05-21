@@ -1,7 +1,7 @@
 const logEl = document.getElementById("log");
 const gamesEl = document.getElementById("games");
 const emulatorStatusEl = document.getElementById("emulator-status");
-const emulatorCanvasEl = document.getElementById("emulator-canvas");
+const emulatorCanvasEl = document.getElementById("canvas");
 const currentGameIdEl = document.getElementById("current-game-id");
 const currentSessionIdEl = document.getElementById("current-session-id");
 const scoreInputEl = document.getElementById("score-input");
@@ -10,6 +10,19 @@ const saveSlotInputEl = document.getElementById("save-slot-input");
 const leaderboardGameEl = document.getElementById("leaderboard-game");
 const leaderboardBodyEl = document.getElementById("leaderboard-body");
 const errorSummaryEl = document.getElementById("error-summary");
+const romDiagnosisSummaryEl = document.getElementById("rom-diagnosis-summary");
+const fullscreenButtonEl = document.getElementById("toggle-fullscreen");
+const touchControlButtons = Array.from(document.querySelectorAll(".touch-btn[data-key]"));
+const touchActionButtonEls = [
+  document.getElementById("touch-action-1"),
+  document.getElementById("touch-action-2"),
+  document.getElementById("touch-action-3"),
+  document.getElementById("touch-action-4"),
+  document.getElementById("touch-action-5"),
+  document.getElementById("touch-action-6"),
+].filter(Boolean);
+const touchCoinButtonEl = document.getElementById("touch-coin");
+const touchStartButtonEl = document.getElementById("touch-start");
 
 const emulatorState = {
   booting: false,
@@ -20,6 +33,71 @@ const emulatorState = {
   sessionStartedAtMs: null,
   games: [],
 };
+
+const VIRTUAL_KEY_CODE_BY_CODE = {
+  ArrowUp: 38,
+  ArrowDown: 40,
+  ArrowLeft: 37,
+  ArrowRight: 39,
+  ControlLeft: 17,
+  AltLeft: 18,
+  Space: 32,
+  ShiftLeft: 16,
+  KeyZ: 90,
+  KeyX: 88,
+  Digit1: 49,
+  Digit5: 53,
+};
+
+const VIRTUAL_KEY_BY_CODE = {
+  ArrowUp: "ArrowUp",
+  ArrowDown: "ArrowDown",
+  ArrowLeft: "ArrowLeft",
+  ArrowRight: "ArrowRight",
+  ControlLeft: "Control",
+  AltLeft: "Alt",
+  Space: " ",
+  ShiftLeft: "Shift",
+  KeyZ: "z",
+  KeyX: "x",
+  Digit1: "1",
+  Digit5: "5",
+};
+
+const TOUCH_CONTROL_PROFILES = {
+  default: {
+    actions: [
+      { label: "P1", code: "ControlLeft", visible: true },
+      { label: "P2", code: "AltLeft", visible: true },
+      { label: "P3", code: "Space", visible: true },
+      { label: "K1", code: "ShiftLeft", visible: false },
+      { label: "K2", code: "KeyZ", visible: false },
+      { label: "K3", code: "KeyX", visible: false },
+    ],
+  },
+  sf2ce: {
+    actions: [
+      { label: "LP", code: "ControlLeft", visible: true },
+      { label: "MP", code: "AltLeft", visible: true },
+      { label: "HP", code: "Space", visible: true },
+      { label: "LK", code: "ShiftLeft", visible: true },
+      { label: "MK", code: "KeyZ", visible: true },
+      { label: "HK", code: "KeyX", visible: true },
+    ],
+  },
+  kof94: {
+    actions: [
+      { label: "A", code: "ControlLeft", visible: true },
+      { label: "B", code: "AltLeft", visible: true },
+      { label: "C", code: "Space", visible: true },
+      { label: "D", code: "ShiftLeft", visible: true },
+      { label: "St", code: "KeyZ", visible: false },
+      { label: "Se", code: "KeyX", visible: false },
+    ],
+  },
+};
+
+const pressedVirtualKeys = new Set();
 
 function log(message) {
   logEl.textContent += `${message}\n`;
@@ -42,6 +120,22 @@ function setErrorSummary(message) {
   }
   errorSummaryEl.hidden = false;
   errorSummaryEl.textContent = message;
+}
+
+function setRomDiagnosisSummary(message, level = "ok") {
+  if (!romDiagnosisSummaryEl) {
+    return;
+  }
+  if (!message) {
+    romDiagnosisSummaryEl.hidden = true;
+    romDiagnosisSummaryEl.textContent = "";
+    romDiagnosisSummaryEl.classList.remove("warn");
+    return;
+  }
+
+  romDiagnosisSummaryEl.hidden = false;
+  romDiagnosisSummaryEl.textContent = message;
+  romDiagnosisSummaryEl.classList.toggle("warn", level === "warn");
 }
 
 function renderCurrentSession() {
@@ -215,6 +309,30 @@ async function getLaunchConfig(game) {
   return payload.launch;
 }
 
+async function getRomDiagnosis(gameId) {
+  const response = await fetch(`/api/games/${gameId}/rom-diagnose`, {
+    method: "GET",
+    credentials: "same-origin",
+  });
+
+  let payload = {};
+  try {
+    payload = await response.json();
+  } catch (_) {
+    payload = {};
+  }
+
+  if (response.ok) {
+    return payload;
+  }
+
+  return {
+    ...payload,
+    error: true,
+    status: response.status,
+  };
+}
+
 function extractFilename(resourceUrl) {
   const url = new URL(resourceUrl, window.location.origin);
   return url.pathname.split("/").pop() || "";
@@ -224,8 +342,138 @@ function machineNameFromRomFilename(romFilename) {
   return romFilename.replace(/\.[^.]+$/, "");
 }
 
+function createVirtualKeyboardEvent(type, code) {
+  const keyCode = VIRTUAL_KEY_CODE_BY_CODE[code] ?? 0;
+  const key = VIRTUAL_KEY_BY_CODE[code] ?? code;
+  return new KeyboardEvent(type, {
+    key,
+    code,
+    keyCode,
+    which: keyCode,
+    bubbles: true,
+    cancelable: true,
+  });
+}
+
+function dispatchVirtualKey(code, pressed) {
+  const hasKey = pressedVirtualKeys.has(code);
+  if (pressed && hasKey) {
+    return;
+  }
+  if (!pressed && !hasKey) {
+    return;
+  }
+  if (pressed) {
+    pressedVirtualKeys.add(code);
+  } else {
+    pressedVirtualKeys.delete(code);
+  }
+  const eventType = pressed ? "keydown" : "keyup";
+  const target = emulatorCanvasEl || document;
+  target.dispatchEvent(createVirtualKeyboardEvent(eventType, code));
+  window.dispatchEvent(createVirtualKeyboardEvent(eventType, code));
+}
+
+function inferTouchProfile(game) {
+  if (!game) {
+    return "default";
+  }
+  const haystack = `${game.slug || ""} ${game.title || ""} ${game.rom_download_url || ""}`.toLowerCase();
+  if (haystack.includes("sf2ce") || haystack.includes("street fighter")) {
+    return "sf2ce";
+  }
+  if (haystack.includes("kof94") || haystack.includes("king of fighters")) {
+    return "kof94";
+  }
+  return "default";
+}
+
+function applyTouchProfile(profileName) {
+  const profile = TOUCH_CONTROL_PROFILES[profileName] || TOUCH_CONTROL_PROFILES.default;
+  profile.actions.forEach((action, index) => {
+    const button = touchActionButtonEls[index];
+    if (!button) {
+      return;
+    }
+    button.textContent = action.label;
+    button.dataset.key = action.code;
+    button.hidden = !action.visible;
+  });
+
+  if (touchCoinButtonEl) {
+    touchCoinButtonEl.dataset.key = "Digit5";
+    touchCoinButtonEl.textContent = "COIN";
+    touchCoinButtonEl.hidden = false;
+  }
+  if (touchStartButtonEl) {
+    touchStartButtonEl.dataset.key = "Digit1";
+    touchStartButtonEl.textContent = "START";
+    touchStartButtonEl.hidden = false;
+  }
+}
+
+function releaseAllVirtualKeys() {
+  for (const code of Array.from(pressedVirtualKeys)) {
+    dispatchVirtualKey(code, false);
+  }
+}
+
+function attachTouchControls() {
+  if (touchControlButtons.length === 0) {
+    return;
+  }
+  for (const button of touchControlButtons) {
+    const press = (event) => {
+      event.preventDefault();
+      const code = button.dataset.key;
+      if (!code) {
+        return;
+      }
+      button.classList.add("pressed");
+      dispatchVirtualKey(code, true);
+    };
+    const release = (event) => {
+      event.preventDefault();
+      const code = button.dataset.key;
+      if (!code) {
+        return;
+      }
+      button.classList.remove("pressed");
+      dispatchVirtualKey(code, false);
+    };
+
+    button.addEventListener("pointerdown", press);
+    button.addEventListener("pointerup", release);
+    button.addEventListener("pointercancel", release);
+    button.addEventListener("pointerleave", release);
+  }
+
+  window.addEventListener("blur", () => {
+    releaseAllVirtualKeys();
+    for (const button of touchControlButtons) {
+      button.classList.remove("pressed");
+    }
+  });
+}
+
+async function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    const target = emulatorCanvasEl || document.documentElement;
+    if (target.requestFullscreen) {
+      await target.requestFullscreen();
+      log("전체화면 모드 활성화");
+    }
+    return;
+  }
+  if (document.exitFullscreen) {
+    await document.exitFullscreen();
+    log("전체화면 모드 종료");
+  }
+}
+
 async function runPrototype(game) {
   setErrorSummary("");
+  setRomDiagnosisSummary("");
   const launch = await getLaunchConfig(game);
   const romReady = await checkResource(launch.rom_download_url);
   const wasmReady = await checkResource(launch.wasm_bundle_url);
@@ -237,6 +485,35 @@ async function runPrototype(game) {
   if (launch.play_session_id) {
     log(`[${game.slug}] play session: ${launch.play_session_id}`);
   }
+
+  const diagnosis = await getRomDiagnosis(game.id);
+  if (diagnosis.error) {
+    const message = diagnosis.message || `HTTP ${diagnosis.status}`;
+    log(`[${game.slug}] ROM diagnose: ${message}`);
+    setRomDiagnosisSummary(`ROM 진단 경고: ${message}`, "warn");
+  } else if (diagnosis.local_rom) {
+    log(
+      `[${game.slug}] ROM diagnose: inferred=${diagnosis.inferred_machine}, likely=${diagnosis.likely_machine}, entries=${diagnosis.entry_count}`
+    );
+    const inferredMissing = diagnosis.missing_markers?.[diagnosis.inferred_machine] || [];
+    if (inferredMissing.length > 0) {
+      setRomDiagnosisSummary(
+        `ROM 경고: ${diagnosis.inferred_machine} 기준 누락 marker ${inferredMissing.length}개`,
+        "warn"
+      );
+    } else {
+      setRomDiagnosisSummary(
+        `ROM 진단 OK: inferred=${diagnosis.inferred_machine}, entries=${diagnosis.entry_count}`,
+        "ok"
+      );
+    }
+    if (inferredMissing.length > 0) {
+      log(`[${game.slug}] missing markers (${diagnosis.inferred_machine}): ${inferredMissing.join(", ")}`);
+    }
+  } else {
+    setRomDiagnosisSummary("외부 ROM URL은 marker 진단을 생략합니다.", "ok");
+  }
+
   if (!wasmReady) {
     const message = `[${game.slug}] WASM 번들이 없습니다. ${launch.wasm_bundle_url} 파일을 실제로 배치해야 실행됩니다.`;
     setErrorSummary(message);
@@ -254,9 +531,109 @@ async function loadRomBytes(romUrl) {
   return new Uint8Array(await response.arrayBuffer());
 }
 
-function configureModule(game, wasmBundleUrl, machineName, romFilename, romBytes) {
+function ensureWasmImportShim(game) {
+  if (window.__mameWasmImportShimInstalled) {
+    return;
+  }
+  window.__mameWasmImportShimInstalled = true;
+
+  const missingImportFallback = new Proxy(
+    {},
+    {
+      get: (_target, key) => {
+        return () => {
+          throw new Error(`Missing wasm env import: ${String(key)}`);
+        };
+      },
+    }
+  );
+  const functionLikeImportKeys = new Set([
+    "abort",
+    "strftime",
+    "__emscripten_stack_alloc",
+    "__emscripten_stack_restore",
+    "__emscripten_stack_save",
+  ]);
+
+  // Some generated bundles reference these helpers directly on global scope.
+  if (typeof window.__emscripten_stack_alloc !== "function") {
+    window.__emscripten_stack_alloc = (size) => {
+      if (window.Module && window.Module.asm && typeof window.Module.asm.stackAlloc === "function") {
+        return window.Module.asm.stackAlloc(size);
+      }
+      throw new Error("stackAlloc helper is unavailable");
+    };
+  }
+  if (typeof window.__emscripten_stack_restore !== "function") {
+    window.__emscripten_stack_restore = (ptr) => {
+      if (window.Module && window.Module.asm && typeof window.Module.asm.stackRestore === "function") {
+        return window.Module.asm.stackRestore(ptr);
+      }
+      throw new Error("stackRestore helper is unavailable");
+    };
+  }
+  if (typeof window.__emscripten_stack_save !== "function") {
+    window.__emscripten_stack_save = () => {
+      if (window.Module && window.Module.asm && typeof window.Module.asm.stackSave === "function") {
+        return window.Module.asm.stackSave();
+      }
+      throw new Error("stackSave helper is unavailable");
+    };
+  }
+
+  const wrapImports = (imports) => {
+    if (!imports || !imports.env) {
+      return imports;
+    }
+    const envWithFallback = new Proxy(imports.env, {
+      get: (target, key, receiver) => {
+        const value = Reflect.get(target, key, receiver);
+        const keyName = String(key);
+        const mustBeFunction = functionLikeImportKeys.has(keyName) || keyName.startsWith("__emscripten_stack_");
+        if (typeof value === "undefined") {
+          return Reflect.get(missingImportFallback, key);
+        }
+        if (mustBeFunction && typeof value !== "function") {
+          return Reflect.get(missingImportFallback, key);
+        }
+        return value;
+      },
+    });
+
+    return {
+      ...imports,
+      env: envWithFallback,
+    };
+  };
+
+  const originalInstantiate = WebAssembly.instantiate.bind(WebAssembly);
+  WebAssembly.instantiate = (binary, imports) => {
+    return originalInstantiate(binary, wrapImports(imports));
+  };
+
+  if (typeof WebAssembly.instantiateStreaming === "function") {
+    const originalInstantiateStreaming = WebAssembly.instantiateStreaming.bind(WebAssembly);
+    WebAssembly.instantiateStreaming = (source, imports) => {
+      return originalInstantiateStreaming(source, wrapImports(imports));
+    };
+  }
+
+  log(`[${game.slug}] wasm import shim 설치 완료`);
+}
+
+function configureModule(game, wasmBundleUrl, machineName, romFilename, romBytes, biosRoms = []) {
   log(`[${game.slug}] machine="${machineName}" rom="${romFilename}" size=${romBytes.length}`);
-  const mameArgs = [machineName, "-rompath", "/roms", "-skip_gameinfo", "-verbose", "-sound", "none"];
+  const mameArgs = [
+    machineName,
+    "-rompath",
+    "/roms",
+    "-skip_gameinfo",
+    "-video",
+    "soft",
+    "-sound",
+    "dummy",
+    "-verbose",
+  ];
   log(`[${game.slug}] MAME args: ${mameArgs.join(" ")}`);
   window.Module = {
     canvas: emulatorCanvasEl,
@@ -273,6 +650,17 @@ function configureModule(game, wasmBundleUrl, machineName, romFilename, romBytes
         if (!window.FS) {
           throw new Error("Emscripten FS를 찾을 수 없습니다.");
         }
+        if (window.Module && window.Module.asm) {
+          if (typeof window.Module.asm.stackAlloc === "function") {
+            window.__emscripten_stack_alloc = window.Module.asm.stackAlloc;
+          }
+          if (typeof window.Module.asm.stackRestore === "function") {
+            window.__emscripten_stack_restore = window.Module.asm.stackRestore;
+          }
+          if (typeof window.Module.asm.stackSave === "function") {
+            window.__emscripten_stack_save = window.Module.asm.stackSave;
+          }
+        }
         try {
           window.FS.mkdir("/roms");
         } catch (error) {
@@ -282,6 +670,10 @@ function configureModule(game, wasmBundleUrl, machineName, romFilename, romBytes
         }
         window.FS.writeFile(`/roms/${romFilename}`, romBytes);
         log(`[${game.slug}] FS에 /roms/${romFilename} 마운트 완료 (${romBytes.length} bytes)`);
+        for (const bios of biosRoms) {
+          window.FS.writeFile(`/roms/${bios.filename}`, bios.bytes);
+          log(`[${game.slug}] FS에 /roms/${bios.filename} 마운트 완료 (${bios.bytes.length} bytes)`);
+        }
         // 디버그: FS에 실제로 파일이 쓰였는지 확인
         try {
           const stat = window.FS.stat(`/roms/${romFilename}`);
@@ -322,7 +714,7 @@ async function loadCoreScript(wasmBundleUrl) {
   }
   await new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = wasmBundleUrl;
+    script.src = wasmBundleUrl + "?v=" + Date.now();
     script.async = true;
     script.onload = resolve;
     script.onerror = () => reject(new Error(`코어 스크립트 로드 실패: ${wasmBundleUrl}`));
@@ -333,6 +725,7 @@ async function loadCoreScript(wasmBundleUrl) {
 
 async function launchGame(game) {
   setErrorSummary("");
+  applyTouchProfile(inferTouchProfile(game));
   if (emulatorState.booting) {
     log("이미 코어 초기화가 진행 중입니다.");
     return;
@@ -364,7 +757,18 @@ async function launchGame(game) {
       throw new Error("ROM 파일명을 확인할 수 없습니다.");
     }
     const romBytes = await loadRomBytes(launch.rom_download_url);
-    configureModule(game, launch.wasm_bundle_url, machineName, romFilename, romBytes);
+    // Load BIOS ROMs (e.g. neogeo.zip for Neo Geo games) if the backend provides them.
+    const biosRoms = [];
+    if (Array.isArray(launch.bios_roms)) {
+      for (const bios of launch.bios_roms) {
+        log(`[${game.slug}] BIOS ROM 로드 중: ${bios.filename}`);
+        const biosBytes = await loadRomBytes(bios.download_url);
+        biosRoms.push({ filename: bios.filename, bytes: biosBytes });
+        log(`[${game.slug}] BIOS ROM 로드 완료: ${bios.filename} (${biosBytes.length} bytes)`);
+      }
+    }
+    ensureWasmImportShim(game);
+    configureModule(game, launch.wasm_bundle_url, machineName, romFilename, romBytes, biosRoms);
     await loadCoreScript(launch.wasm_bundle_url);
     log(`[${game.slug}] 코어 로딩 시작`);
   } catch (error) {
@@ -491,5 +895,18 @@ leaderboardGameEl.addEventListener("change", async () => {
     log(`리더보드 조회 실패: ${error.message}`);
   }
 });
+
+if (fullscreenButtonEl) {
+  fullscreenButtonEl.addEventListener("click", async () => {
+    try {
+      await toggleFullscreen();
+    } catch (error) {
+      log(`전체화면 전환 실패: ${error.message}`);
+    }
+  });
+}
+
+applyTouchProfile("default");
+attachTouchControls();
 
 renderCurrentSession();

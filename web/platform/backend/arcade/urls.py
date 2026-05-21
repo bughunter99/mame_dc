@@ -9,6 +9,7 @@ urlpatterns = [
     path("api/auth/logout", views.logout_user, name="logout_user"),
     path("api/games", views.list_games, name="list_games"),
     path("api/games/<int:game_id>/launch", views.launch_game, name="launch_game"),
+    path("api/games/<int:game_id>/rom-diagnose", views.diagnose_game_rom, name="diagnose_game_rom"),
     path("api/games/sync-local-roms", views.sync_local_roms, name="sync_local_roms"),
     path("api/roms/download/<str:token>", views.download_local_rom_with_token, name="download_local_rom_with_token"),
     path("api/saves", views.list_save_states, name="list_save_states"),
