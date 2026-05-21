@@ -33,6 +33,7 @@
 !/tests/
 !/doxygen/
 !/web/
+!/tools/
 !/.gitattributes
 !/.gitignore
 !/.travis.yml

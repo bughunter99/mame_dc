@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 from functools import wraps
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 from datetime import timedelta
 import zipfile
 
@@ -140,6 +140,14 @@ def _issue_local_rom_token(game_id: int, rom_relative_path: str) -> str:
         "rom_path": rom_relative_path,
     }
     return signing.dumps(payload, salt=ROM_TOKEN_SALT)
+
+
+def _rewrite_local_url(request: HttpRequest, url: str) -> str:
+    """Replace 127.0.0.1/localhost with the actual request host so mobile clients can reach the server."""
+    parsed = urlparse(url)
+    if parsed.hostname in {"127.0.0.1", "localhost"}:
+        return request.build_absolute_uri(parsed.path)
+    return url
 
 
 def _is_local_rom_url(url: str) -> bool:
@@ -351,7 +359,7 @@ def launch_game(request: HttpRequest, game_id: int):
                 "rom_download_url": rom_download_url,
                 "rom_filename": rom_filename,
                 "machine_name": machine_name,
-                "wasm_bundle_url": game.wasm_bundle_url,
+                "wasm_bundle_url": _rewrite_local_url(request, game.wasm_bundle_url),
                 "token_ttl_seconds": ROM_TOKEN_MAX_AGE_SECONDS if _is_local_rom_url(game.rom_download_url) else None,
                 "play_session_id": str(play_session.id),
                 "bios_roms": bios_roms,
