@@ -50,6 +50,14 @@ regtests/jedutil/output
 /CMakeLists.txt
 /samples
 
-# Local ROM archives
-/roms/**/*.zip
-/web/platform/roms/**/*.zip
+/roms/
+/web/platform/roms/
+/web/platform/frontend/static/wasm/*.wasm
+
+# Root-level build artifacts
+/*.exe
+/*.dll
+/*.pdb
+/*.ilk
+/*.map
+/*.wasm
