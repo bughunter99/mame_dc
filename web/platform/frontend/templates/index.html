@@ -24,23 +24,30 @@
         <button id="toggle-fullscreen">전체화면</button>
         <span class="mobile-hint">모바일: 가로 모드 권장</span>
       </div>
-      <canvas id="canvas" width="960" height="720"></canvas>
-      <div id="touch-controls" class="touch-controls" aria-label="모바일 컨트롤">
-        <div class="dpad" role="group" aria-label="방향키">
-          <button id="touch-up" class="touch-btn up" data-key="ArrowUp">▲</button>
-          <button id="touch-left" class="touch-btn left" data-key="ArrowLeft">◀</button>
-          <button id="touch-right" class="touch-btn right" data-key="ArrowRight">▶</button>
-          <button id="touch-down" class="touch-btn down" data-key="ArrowDown">▼</button>
-        </div>
-        <div class="actions" role="group" aria-label="액션 버튼">
-          <button id="touch-action-1" class="touch-btn action" data-key="ControlLeft">P1</button>
-          <button id="touch-action-2" class="touch-btn action" data-key="AltLeft">P2</button>
-          <button id="touch-action-3" class="touch-btn action" data-key="Space">P3</button>
-          <button id="touch-action-4" class="touch-btn action" data-key="ShiftLeft">K1</button>
-          <button id="touch-action-5" class="touch-btn action" data-key="KeyZ">K2</button>
-          <button id="touch-action-6" class="touch-btn action" data-key="KeyX">K3</button>
-          <button id="touch-coin" class="touch-btn system" data-key="Digit5">COIN</button>
-          <button id="touch-start" class="touch-btn system" data-key="Digit1">START</button>
+      <div class="emulator-wrap">
+        <canvas id="canvas" width="960" height="720"></canvas>
+        <div id="touch-controls" class="touch-controls" aria-label="모바일 컨트롤">
+          <div id="joystick-base" class="joystick-base" aria-label="조이스틱">
+            <div id="joystick-knob" class="joystick-knob"></div>
+          </div>
+          <div class="actions" role="group" aria-label="액션 버튼">
+            <div class="system-btns">
+              <button id="touch-coin" class="touch-btn system" data-key="Digit5">COIN</button>
+              <button id="touch-start" class="touch-btn system" data-key="Digit1">START</button>
+            </div>
+            <div class="face-btns">
+              <div class="face-row face-row-top">
+                <button id="touch-action-1" class="touch-btn action" data-key="ControlLeft">P1</button>
+                <button id="touch-action-2" class="touch-btn action" data-key="AltLeft">P2</button>
+                <button id="touch-action-3" class="touch-btn action" data-key="Space">P3</button>
+              </div>
+              <div class="face-row face-row-bottom">
+                <button id="touch-action-4" class="touch-btn action" data-key="ShiftLeft">K1</button>
+                <button id="touch-action-5" class="touch-btn action" data-key="KeyZ">K2</button>
+                <button id="touch-action-6" class="touch-btn action" data-key="KeyX">K3</button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </section>

@@ -418,6 +418,80 @@ function releaseAllVirtualKeys() {
   }
 }
 
+function attachJoystick() {
+  const base = document.getElementById("joystick-base");
+  const knob = document.getElementById("joystick-knob");
+  if (!base || !knob) {
+    return;
+  }
+
+  let activePointerId = null;
+  let prevKeys = new Set();
+  const DEAD_ZONE = 0.22;
+  const MAX_TRAVEL = 0.42;
+
+  function updateJoystick(clientX, clientY) {
+    const rect = base.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const r = rect.width / 2;
+
+    const rawDx = clientX - cx;
+    const rawDy = clientY - cy;
+    const dist = Math.hypot(rawDx, rawDy);
+    const maxDist = r * MAX_TRAVEL;
+
+    const clampFactor = dist > maxDist ? maxDist / dist : 1;
+    knob.style.transform = `translate(${rawDx * clampFactor}px, ${rawDy * clampFactor}px)`;
+
+    const threshold = r * DEAD_ZONE;
+    const newKeys = new Set();
+    if (rawDy < -threshold) newKeys.add("ArrowUp");
+    if (rawDy >  threshold) newKeys.add("ArrowDown");
+    if (rawDx < -threshold) newKeys.add("ArrowLeft");
+    if (rawDx >  threshold) newKeys.add("ArrowRight");
+
+    for (const k of prevKeys) {
+      if (!newKeys.has(k)) dispatchVirtualKey(k, false);
+    }
+    for (const k of newKeys) {
+      if (!prevKeys.has(k)) dispatchVirtualKey(k, true);
+    }
+    prevKeys = newKeys;
+  }
+
+  function onMove(e) {
+    if (e.pointerId !== activePointerId) return;
+    e.preventDefault();
+    updateJoystick(e.clientX, e.clientY);
+  }
+
+  function onEnd(e) {
+    if (e.pointerId !== activePointerId) return;
+    knob.style.transform = "translate(0, 0)";
+    for (const k of prevKeys) dispatchVirtualKey(k, false);
+    prevKeys = new Set();
+    activePointerId = null;
+    document.removeEventListener("pointermove", onMove);
+    document.removeEventListener("pointerup",   onEnd);
+    document.removeEventListener("pointercancel", onEnd);
+  }
+
+  base.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    if (activePointerId !== null) return;
+    activePointerId = e.pointerId;
+    updateJoystick(e.clientX, e.clientY);
+    document.addEventListener("pointermove",   onMove,  { passive: false });
+    document.addEventListener("pointerup",     onEnd);
+    document.addEventListener("pointercancel", onEnd);
+  }, { passive: false });
+
+  window.addEventListener("blur", () => {
+    if (activePointerId !== null) onEnd({ pointerId: activePointerId });
+  });
+}
+
 function attachTouchControls() {
   if (touchControlButtons.length === 0) {
     return;
@@ -458,7 +532,7 @@ function attachTouchControls() {
 
 async function toggleFullscreen() {
   if (!document.fullscreenElement) {
-    const target = emulatorCanvasEl || document.documentElement;
+    const target = (emulatorCanvasEl && emulatorCanvasEl.closest(".emulator-wrap")) || document.documentElement;
     if (target.requestFullscreen) {
       await target.requestFullscreen();
       log("전체화면 모드 활성화");
@@ -908,5 +982,6 @@ if (fullscreenButtonEl) {
 
 applyTouchProfile("default");
 attachTouchControls();
+attachJoystick();
 
 renderCurrentSession();
